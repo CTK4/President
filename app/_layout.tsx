@@ -19,6 +19,7 @@ export default function RootLayout() {
       <Stack.Screen name="index" options={{ title: "President Simulator" }} />
       <Stack.Screen name="setup/index" options={{ title: "New Presidency" }} />
       <Stack.Screen name="setup/vp" options={{ title: "Vice President" }} />
+      <Stack.Screen name="settings" options={{ title: "Settings" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
