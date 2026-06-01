@@ -1,0 +1,38 @@
+{
+  "name": "president-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "latest",
+    "expo": "latest",
+    "expo-constants": "~56.0.16",
+    "expo-font": "~56.0.5",
+    "expo-haptics": "latest",
+    "expo-linking": "~56.0.13",
+    "expo-router": "latest",
+    "expo-sqlite": "latest",
+    "react": "19.2.3",
+    "react-dom": "^19.2.3",
+    "react-native": "latest",
+    "react-native-gesture-handler": "~2.31.1",
+    "react-native-reanimated": "4.3.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "latest",
+    "react-native-web": "^0.21.2",
+    "react-native-worklets": "0.8.3"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
