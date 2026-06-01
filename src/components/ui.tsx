@@ -219,3 +219,44 @@ export function Stat({ label, value, color }: { label: string; value: string | n
 export function Row({ children }: { children: React.ReactNode }) {
   return <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>{children}</View>;
 }
+
+export function SegmentedSubnav<T extends string>({
+  options,
+  selected,
+  onSelect,
+}: {
+  options: Array<{ id: T; label: string }>;
+  selected: T;
+  onSelect: (id: T) => void;
+}) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
+      {options.map((option) => {
+        const active = option.id === selected;
+        return (
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            key={option.id}
+            onPress={() => onSelect(option.id)}
+            style={{
+              minHeight: 38,
+              borderRadius: 8,
+              borderCurve: "continuous",
+              borderWidth: 1,
+              borderColor: active ? colors.blue : colors.line,
+              backgroundColor: active ? "#e8f0fb" : colors.card,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: 12,
+            }}
+          >
+            <Text style={{ color: active ? colors.blue : colors.ink, fontSize: 14, fontWeight: "800" }} numberOfLines={1}>
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}

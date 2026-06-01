@@ -1,4 +1,6 @@
-import { Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { Link, Tabs } from "expo-router";
+import { Pressable } from "react-native";
 
 import { colors } from "@/components/ui";
 
@@ -8,19 +10,51 @@ export default function TabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: colors.muted,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: "700",
+        },
+        tabBarStyle: {
+          backgroundColor: colors.card,
+          borderTopColor: colors.line,
+        },
       }}
     >
-      <Tabs.Screen name="dashboard" options={{ title: "Dashboard" }} />
-      <Tabs.Screen name="events" options={{ title: "Events" }} />
-      <Tabs.Screen name="people" options={{ title: "People" }} />
-      <Tabs.Screen name="congress" options={{ title: "Congress" }} />
-      <Tabs.Screen name="court" options={{ title: "Court" }} />
-      <Tabs.Screen name="states" options={{ title: "States" }} />
-      <Tabs.Screen name="economy" options={{ title: "Economy" }} />
-      <Tabs.Screen name="foreign" options={{ title: "Foreign" }} />
-      <Tabs.Screen name="media" options={{ title: "Media" }} />
-      <Tabs.Screen name="history" options={{ title: "History" }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings" }} />
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: "Dashboard",
+          tabBarIcon: ({ color, size }) => <Ionicons name="speedometer-outline" color={color} size={size} />,
+          headerRight: () => (
+            <Link href="/settings" asChild>
+              <Pressable accessibilityLabel="Open settings" accessibilityRole="button" style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: "center" }}>
+                <Ionicons name="settings-outline" color={colors.ink} size={22} />
+              </Pressable>
+            </Link>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="government"
+        options={{
+          title: "Government",
+          tabBarIcon: ({ color, size }) => <Ionicons name="business-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="world"
+        options={{
+          title: "World",
+          tabBarIcon: ({ color, size }) => <Ionicons name="globe-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="campaign"
+        options={{
+          title: "Campaign",
+          tabBarIcon: ({ color, size }) => <Ionicons name="megaphone-outline" color={color} size={size} />,
+        }}
+      />
     </Tabs>
   );
 }
