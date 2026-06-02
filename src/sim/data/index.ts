@@ -66,7 +66,7 @@ export const scenarios: Scenario[] = [
     congressControl: "split",
     courtLean: 32,
     economy: defaultEconomy,
-    eventIds: ["inflation", "border", "court-vacancy", "ukraine-crisis", "tech-antitrust", "shutdown", "housing", "ai-regulation"],
+    eventIds: ["inflation", "border", "ukraine-crisis", "tech-antitrust", "shutdown", "housing", "ai-regulation"],
     tags: ["modern", "polarization", "institutions"],
   },
   {
@@ -118,7 +118,7 @@ export const scenarios: Scenario[] = [
     congressControl: "split",
     courtLean: 12,
     economy: defaultEconomy,
-    eventIds: ["legitimacy", "court-vacancy", "trade-war", "party-revolt", "foreign-crisis", "media-firestorm", "shutdown"],
+    eventIds: ["legitimacy", "trade-war", "party-revolt", "foreign-crisis", "media-firestorm", "shutdown"],
     tags: ["alternate-history", "legitimacy"],
   },
   {

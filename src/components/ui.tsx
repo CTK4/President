@@ -1,4 +1,5 @@
 import * as React from "react";
+import * as Haptics from "expo-haptics";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { DimensionValue, TextStyle } from "react-native";
 
@@ -19,12 +20,20 @@ export const colors = {
   gold: "#a77a26",
 };
 
+function triggerSelectionHaptic() {
+  if (process.env.EXPO_OS === "ios") {
+    void Haptics.selectionAsync().catch(() => {});
+  }
+}
+
 export function Screen({ children }: { children: React.ReactNode }) {
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
       style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 36 }}
+      contentContainerStyle={{ flexGrow: 1, padding: 16, gap: 14, paddingBottom: 96 }}
     >
       {children}
     </ScrollView>
@@ -90,12 +99,17 @@ export function Button({
 }) {
   const backgroundColor = tone === "ghost" ? "transparent" : tone === "blue" ? colors.blue : tone === "red" ? colors.red : colors.ink;
   const textColor = tone === "ghost" ? colors.ink : "#fff";
+  function press() {
+    triggerSelectionHaptic();
+    onPress();
+  }
+
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
-      onPress={onPress}
-      style={{
+      onPress={press}
+      style={({ pressed }) => ({
         minHeight: 44,
         borderRadius: 8,
         borderCurve: "continuous",
@@ -106,9 +120,12 @@ export function Button({
         alignItems: "center",
         justifyContent: "center",
         paddingHorizontal: 14,
-      }}
+        transform: [{ scale: pressed && !disabled ? 0.99 : 1 }],
+      })}
     >
-      <Text style={{ color: textColor, fontSize: 15, fontWeight: "800" }}>{label}</Text>
+      <Text selectable={false} style={{ color: textColor, fontSize: 15, fontWeight: "800", textAlign: "center" }} numberOfLines={2}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -129,17 +146,23 @@ export function OptionGrid<T extends string>({
         return (
           <Pressable
             accessibilityRole="button"
+            accessibilityState={{ selected: active }}
             key={option.id}
-            onPress={() => onSelect(option.id)}
-            style={{
+            onPress={() => {
+              triggerSelectionHaptic();
+              onSelect(option.id);
+            }}
+            style={({ pressed }) => ({
+              minHeight: 44,
               padding: 12,
               borderRadius: 8,
               borderCurve: "continuous",
               borderWidth: 1,
               borderColor: active ? colors.blue : colors.line,
               backgroundColor: active ? "#e8f0fb" : "#fff",
+              opacity: pressed ? 0.86 : 1,
               gap: 4,
-            }}
+            })}
           >
             <AppText variant="subtitle" color={active ? colors.blue : colors.ink}>
               {option.title}
@@ -184,7 +207,10 @@ export function Field({
           paddingHorizontal: 12,
           paddingVertical: 10,
           fontSize: 16,
+          color: colors.ink,
         }}
+        placeholderTextColor={colors.muted}
+        selectionColor={colors.blue}
       />
     </View>
   );
@@ -206,11 +232,23 @@ export function Meter({ label, value, color = colors.blue }: { label: string; va
 }
 
 export function Stat({ label, value, color }: { label: string; value: string | number; color?: string }) {
+  const textValue = `${value}`;
+  const isCompactText = typeof value === "string" && textValue.length > 8;
+
   return (
-    <View style={{ minWidth: 92, flex: 1, gap: 2 }}>
-      <AppText variant="number" color={color}>
-        {value}
-      </AppText>
+    <View style={{ minWidth: isCompactText ? 132 : 92, flexBasis: isCompactText ? 132 : 92, flexGrow: 1, flexShrink: 1, gap: 2 }}>
+      <Text
+        selectable
+        style={{
+          color: color ?? colors.ink,
+          fontSize: isCompactText ? 18 : 28,
+          lineHeight: isCompactText ? 22 : 34,
+          fontWeight: "800",
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {textValue}
+      </Text>
       <AppText variant="label">{label}</AppText>
     </View>
   );
@@ -238,9 +276,12 @@ export function SegmentedSubnav<T extends string>({
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             key={option.id}
-            onPress={() => onSelect(option.id)}
-            style={{
-              minHeight: 38,
+            onPress={() => {
+              triggerSelectionHaptic();
+              onSelect(option.id);
+            }}
+            style={({ pressed }) => ({
+              minHeight: 44,
               borderRadius: 8,
               borderCurve: "continuous",
               borderWidth: 1,
@@ -248,8 +289,9 @@ export function SegmentedSubnav<T extends string>({
               backgroundColor: active ? "#e8f0fb" : colors.card,
               alignItems: "center",
               justifyContent: "center",
+              opacity: pressed ? 0.86 : 1,
               paddingHorizontal: 12,
-            }}
+            })}
           >
             <Text style={{ color: active ? colors.blue : colors.ink, fontSize: 14, fontWeight: "800" }} numberOfLines={1}>
               {option.label}

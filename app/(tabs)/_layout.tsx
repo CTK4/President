@@ -10,9 +10,16 @@ export default function TabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: colors.blue,
         tabBarInactiveTintColor: colors.muted,
+        tabBarHideOnKeyboard: true,
+        headerTitleStyle: {
+          fontWeight: "800",
+        },
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: "700",
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
         },
         tabBarStyle: {
           backgroundColor: colors.card,
@@ -27,7 +34,12 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="speedometer-outline" color={color} size={size} />,
           headerRight: () => (
             <Link href="/settings" asChild>
-              <Pressable accessibilityLabel="Open settings" accessibilityRole="button" style={{ paddingHorizontal: 16, minHeight: 44, justifyContent: "center" }}>
+              <Pressable
+                accessibilityLabel="Open settings"
+                accessibilityRole="button"
+                hitSlop={10}
+                style={{ paddingHorizontal: 16, minHeight: 44, minWidth: 44, justifyContent: "center", alignItems: "center" }}
+              >
                 <Ionicons name="settings-outline" color={colors.ink} size={22} />
               </Pressable>
             </Link>

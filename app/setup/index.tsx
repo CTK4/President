@@ -1,7 +1,7 @@
 import { router } from "expo-router";
 import * as React from "react";
 
-import { AppText, Button, Card, Field, OptionGrid, Screen, colors } from "@/components/ui";
+import { AppText, Button, Card, Field, OptionGrid, Screen } from "@/components/ui";
 import { scenarios } from "@/sim/data";
 import type { PartyId } from "@/sim/types";
 
@@ -11,8 +11,98 @@ const parties: Array<{ id: PartyId; title: string; description: string }> = [
   { id: "independent", title: "Independent", description: "Cross-partisan reform with weaker party machinery." },
 ];
 
-const backgrounds = ["Governor", "Senator", "Vice President", "Business Leader", "Military / Intelligence", "Community Organizer", "Academic"];
+const backgrounds = [
+  {
+    id: "Governor",
+    title: "Governor",
+    description: "Pros: executive experience, disaster response, state coalitions. Cons: weaker foreign policy and Washington relationships.",
+  },
+  {
+    id: "Senator",
+    title: "Senator",
+    description: "Pros: legislative instincts, committee networks, media reps. Cons: less executive experience and slower crisis command.",
+  },
+  {
+    id: "Vice President",
+    title: "Vice President",
+    description: "Pros: White House experience, foreign exposure, continuity. Cons: inherits the prior administration's baggage.",
+  },
+  {
+    id: "Business Leader",
+    title: "Business Leader",
+    description: "Pros: markets, jobs messaging, management brand. Cons: weaker public-sector skill and higher conflict-of-interest scrutiny.",
+  },
+  {
+    id: "Military / Intelligence",
+    title: "Military / Intelligence",
+    description: "Pros: security credibility, command discipline, crisis poise. Cons: civil-liberties concerns and thinner domestic coalition roots.",
+  },
+  {
+    id: "Community Organizer",
+    title: "Community Organizer",
+    description: "Pros: grassroots energy, movement trust, turnout. Cons: establishment skepticism and lower institutional leverage.",
+  },
+  {
+    id: "Academic",
+    title: "Academic",
+    description: "Pros: policy depth, research fluency, long-range thinking. Cons: elite branding and less practical deal-making experience.",
+  },
+];
 const mandates = ["Landslide Victory", "Comfortable Win", "Razor-Thin Margin", "Electoral College Only"];
+const communicationStyles = [
+  {
+    id: "Polished / presidential",
+    title: "Polished / presidential",
+    description: "Pros: reassures moderates, markets, and allies. Cons: can feel scripted when voters want urgency.",
+  },
+  {
+    id: "Plainspoken populist",
+    title: "Plainspoken populist",
+    description: "Pros: direct, memorable, strong with angry or ignored voters. Cons: spooks institutions and can create media blowback.",
+  },
+  {
+    id: "Technocratic explainer",
+    title: "Technocratic explainer",
+    description: "Pros: strong for complex crises, budgets, and public-health tradeoffs. Cons: risks sounding cold or overly academic.",
+  },
+  {
+    id: "Empathetic unifier",
+    title: "Empathetic unifier",
+    description: "Pros: lowers temperature and builds trust after shocks. Cons: can look soft during hardball negotiations.",
+  },
+  {
+    id: "Combative fighter",
+    title: "Combative fighter",
+    description: "Pros: rallies the base and dominates news cycles. Cons: raises polarization and makes compromise harder.",
+  },
+];
+const ideologies = [
+  {
+    id: "Progressive Reform",
+    title: "Progressive Reform",
+    description: "Pros: energizes activists on climate, labor, healthcare, and rights. Cons: higher fiscal, court, and moderate-voter risk.",
+  },
+  {
+    id: "Liberal Mainstream",
+    title: "Liberal Mainstream",
+    description: "Pros: broad Democratic coalition fit and institutional comfort. Cons: frustrates left flank when change feels incremental.",
+  },
+  {
+    id: "Centrist Reformer",
+    title: "Centrist Reformer",
+    description: "Pros: strongest with swing voters and bipartisan deals. Cons: weaker base enthusiasm and muddier governing mandate.",
+  },
+  {
+    id: "Conservative Mainstream",
+    title: "Conservative Mainstream",
+    description: "Pros: stable fit for taxes, courts, security, and business groups. Cons: resistance from labor, climate, and civil-rights blocs.",
+  },
+  {
+    id: "National Populist",
+    title: "National Populist",
+    description: "Pros: intense support on borders, trade, and anti-establishment fights. Cons: alliance tension, market risk, and high polarization.",
+  },
+];
 
 export default function Setup() {
   const [name, setName] = React.useState("Morgan Reyes");
@@ -42,16 +132,15 @@ export default function Setup() {
       </Card>
       <Card>
         <AppText variant="label">Background</AppText>
-        <OptionGrid selected={background} onSelect={setBackground} options={backgrounds.map((item) => ({ id: item, title: item }))} />
+        <OptionGrid selected={background} onSelect={setBackground} options={backgrounds} />
         <AppText variant="label">Mandate</AppText>
         <OptionGrid selected={mandateStrength} onSelect={setMandateStrength} options={mandates.map((item) => ({ id: item, title: item }))} />
       </Card>
       <Card>
-        <Field label="Communication Style" value={communicationStyle} onChangeText={setCommunicationStyle} />
-        <Field label="Ideology" value={ideology} onChangeText={setIdeology} />
-        <AppText color={colors.muted}>
-          Defaults are used for gender, age, religion, education, wealth, military service, scandal history, and home region. These are stored in the typed president model and can be expanded into dedicated controls.
-        </AppText>
+        <AppText variant="label">Communication Style</AppText>
+        <OptionGrid selected={communicationStyle} onSelect={setCommunicationStyle} options={communicationStyles} />
+        <AppText variant="label">Ideology</AppText>
+        <OptionGrid selected={ideology} onSelect={setIdeology} options={ideologies} />
       </Card>
       <Button
         label="Choose Vice President"

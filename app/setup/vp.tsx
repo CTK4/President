@@ -6,7 +6,48 @@ import { vpOptions } from "@/sim/data";
 import type { PartyId } from "@/sim/types";
 import { startGame } from "@/state/game-store";
 
-const portfolios = ["Congressional relations", "Economic recovery", "Foreign policy", "Healthcare", "Border security", "Technology / AI", "Pandemic response", "Labor relations"];
+const portfolios = [
+  {
+    id: "Congressional relations",
+    title: "Congressional relations",
+    description: "Effect: boosts bill negotiation, committee relationships, and Senate deal-making when your agenda needs votes.",
+  },
+  {
+    id: "Economic recovery",
+    title: "Economic recovery",
+    description: "Effect: improves jobs, inflation, business confidence, and budget messaging during weak economic turns.",
+  },
+  {
+    id: "Foreign policy",
+    title: "Foreign policy",
+    description: "Effect: strengthens alliance management, crisis diplomacy, tradeoffs with rivals, and global credibility.",
+  },
+  {
+    id: "Healthcare",
+    title: "Healthcare",
+    description: "Effect: helps healthcare bills, public-health trust, hospital groups, seniors, and cost-of-living approval.",
+  },
+  {
+    id: "Border security",
+    title: "Border security",
+    description: "Effect: improves border crisis response, security-hawk approval, and immigration negotiations with Congress.",
+  },
+  {
+    id: "Technology / AI",
+    title: "Technology / AI",
+    description: "Effect: improves tech-sector trust, innovation policy, AI regulation, cybersecurity, and future-economy events.",
+  },
+  {
+    id: "Pandemic response",
+    title: "Pandemic response",
+    description: "Effect: boosts emergency coordination, public-health credibility, supply chains, and science communication.",
+  },
+  {
+    id: "Labor relations",
+    title: "Labor relations",
+    description: "Effect: improves union approval, strike mediation, wage policy, working-class turnout, and industrial disputes.",
+  },
+];
 
 export default function VicePresidentSetup() {
   const params = useLocalSearchParams<{
@@ -19,7 +60,7 @@ export default function VicePresidentSetup() {
     ideology: string;
   }>();
   const [vicePresidentId, setVicePresidentId] = React.useState(vpOptions[0].id);
-  const [portfolio, setPortfolio] = React.useState(portfolios[0]);
+  const [portfolio, setPortfolio] = React.useState(portfolios[0].id);
   const selected = vpOptions.find((vp) => vp.id === vicePresidentId) ?? vpOptions[0];
 
   async function begin() {
@@ -56,7 +97,7 @@ export default function VicePresidentSetup() {
       </Card>
       <Card>
         <AppText variant="label">Portfolio</AppText>
-        <OptionGrid selected={portfolio} onSelect={setPortfolio} options={portfolios.map((item) => ({ id: item, title: item }))} />
+        <OptionGrid selected={portfolio} onSelect={setPortfolio} options={portfolios} />
       </Card>
       <Button label="Take the Oath" tone="red" onPress={() => void begin()} />
     </Screen>

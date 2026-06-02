@@ -2,13 +2,14 @@ import * as React from "react";
 
 import {
   advanceTurn as engineAdvanceTurn,
+  appointJustice as engineAppointJustice,
   createNewGame,
   resolveBillAction as engineResolveBillAction,
   resolveElection as engineResolveElection,
   resolveResponse as engineResolveResponse,
 } from "@/sim/engine";
 import { clearSave, loadGame, saveGame } from "@/sim/save/sqlite";
-import type { BillAction, ElectionType, GameState, NewGameConfig, PlayerResponse, TurnResolution } from "@/sim/types";
+import type { BillAction, CourtNominationStrategy, ElectionType, GameState, NewGameConfig, PlayerResponse, TurnResolution } from "@/sim/types";
 
 type Snapshot = {
   game: GameState | null;
@@ -86,6 +87,13 @@ export async function resolveElection(type: ElectionType) {
   await saveGame(result.game);
   setSnapshot({ game: result.game });
   return result;
+}
+
+export async function appointJustice(vacancyId: string, strategy: CourtNominationStrategy) {
+  if (!snapshot.game) return;
+  const game = engineAppointJustice(snapshot.game, vacancyId, strategy);
+  await saveGame(game);
+  setSnapshot({ game });
 }
 
 export async function resetGame() {

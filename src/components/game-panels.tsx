@@ -49,22 +49,30 @@ export function CongressPanel({ game }: { game: GameState }) {
 export function CourtPanel({ game }: { game: GameState }) {
   const conservative = game.supremeCourt.justices.filter((justice) => justice.ideology > 8).length;
   const liberal = game.supremeCourt.justices.filter((justice) => justice.ideology < -8).length;
+  const moderate = game.supremeCourt.justices.length - conservative - liberal;
+
   return (
     <Card>
       <AppText variant="label">Supreme Court</AppText>
       <Row>
         <Stat label="Conservative" value={conservative} color={colors.red} />
         <Stat label="Liberal" value={liberal} color={colors.blue} />
+        <Stat label="Moderate" value={moderate} color={colors.muted} />
         <Stat label="Cases" value={game.pendingCases.filter((item) => item.status === "pending").length} />
       </Row>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-        {game.supremeCourt.justices.map((justice) => (
-          <View key={justice.id} style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: justice.ideology > 0 ? "#f3d9d5" : "#dce9f9" }}>
-            <AppText variant="label" color={justice.ideology > 0 ? colors.red : colors.blue}>
-              {justice.chief ? "C" : Math.round(Math.abs(justice.ideology))}
-            </AppText>
-          </View>
-        ))}
+        {game.supremeCourt.justices.map((justice) => {
+          const ideologyColor = justice.ideology > 8 ? colors.red : justice.ideology < -8 ? colors.blue : colors.muted;
+          const backgroundColor = justice.ideology > 8 ? "#f3d9d5" : justice.ideology < -8 ? "#dce9f9" : "#ebe4d8";
+
+          return (
+            <View key={justice.id} style={{ width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor }}>
+              <AppText variant="label" color={ideologyColor}>
+                {justice.chief ? "C" : Math.round(Math.abs(justice.ideology))}
+              </AppText>
+            </View>
+          );
+        })}
       </View>
     </Card>
   );

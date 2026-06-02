@@ -16,6 +16,7 @@ import {
 import type {
   Bill,
   BillAction,
+  CourtNominationStrategy,
   CourtCase,
   Economy,
   ElectionResult,
@@ -30,6 +31,7 @@ import type {
   ResponseOption,
   Scenario,
   ScenarioEvent,
+  SupremeCourtVacancy,
   TurnResolution,
   TurnResolutionSummary,
 } from "@/sim/types";
@@ -43,6 +45,21 @@ const defaultSettings: GameSettings = {
   warMode: true,
   pacing: "monthly",
   aiFlavorText: false,
+};
+
+type PolicyClassification = {
+  actionType: "normal" | "extrajudicial_lethal_force" | "authoritarian_overreach";
+  issueTags: string[];
+  legalityRisk: number;
+  rightsViolationRisk: number;
+  violenceLevel: number;
+  authoritarianLevel: number;
+  humanitarianRisk: number;
+  courtRisk: number;
+  impeachmentRisk: number;
+  militaryRefusalRisk: number;
+  internationalBacklash: number;
+  crisisTrigger: boolean;
 };
 
 export function createNewGame(config: NewGameConfig): GameState {
@@ -116,6 +133,7 @@ export function createNewGame(config: NewGameConfig): GameState {
     schedule,
     pendingBills: [],
     pendingCases: [],
+    pendingCourtVacancies: [],
     activeCrises: scenario.tags.includes("crisis")
       ? [{ id: "opening-crisis", type: "economic crash", severity: 78, duration: 4, publicFear: 72, institutionalConfidence: 40, federalResponseQuality: 45, stateCooperation: 48, mediaPressure: 70, deathTollOrDamage: 35, economicImpact: 68 }]
       : [],
@@ -147,6 +165,7 @@ export function resolveResponse(game: GameState, response: PlayerResponse): Turn
   const option = response.kind === "suggested" ? game.currentEvent.responseOptions.find((item) => item.id === response.optionId) : undefined;
   const parsedPolicy = response.kind === "custom" ? parseCustomPolicy(response.text) : parseOption(option ?? game.currentEvent.responseOptions[0]);
   const text = response.kind === "custom" ? response.text : (option?.text ?? game.currentEvent.responseOptions[0].text);
+  const classification = response.kind === "custom" ? classifyPolicy(text) : normalPolicyClassification(parsedPolicy.tags, parsedPolicy.legalityRisk);
   const cabinetQuality = average(game.cabinet.map((member) => member.competence - member.fatigue * 0.4));
   const vpBoost = game.vicePresident.portfolio && game.currentEvent.issueTags.some((tag) => game.vicePresident.portfolio?.toLowerCase().includes(tag)) ? 4 : 0;
   const issueFit = game.currentEvent.issueTags.filter((tag) => parsedPolicy.tags.includes(tag)).length;
@@ -161,7 +180,7 @@ export function resolveResponse(game: GameState, response: PlayerResponse): Turn
   const personaDeltas = Object.fromEntries(game.personas.map((persona) => [persona.id, round1(clamp(issueScore(persona.topIssues, parsedPolicy.tags) * 2 + alignment(persona.ideology, parsedPolicy.ideologyScore) * 5 + approvalDelta * 0.25, -12, 12))]));
   const mediaToneDelta = round1(clamp(approvalDelta + (parsedPolicy.tone === "combative" ? -3 : 1) - game.currentEvent.severity / 30, -12, 12));
 
-  const effects: TurnResolutionSummary = {
+  let effects: TurnResolutionSummary = {
     parsedPolicy,
     approvalDelta,
     congressDelta,
@@ -172,31 +191,39 @@ export function resolveResponse(game: GameState, response: PlayerResponse): Turn
     personaDeltas,
     mediaToneDelta,
   };
+  if (classification.crisisTrigger) {
+    effects = constitutionalCrisisEffects(game, parsedPolicy, classification);
+  }
   const next: GameState = structuredClone(game);
   applyEffects(next, effects);
-  addInstitutionalConsequences(next, text, effects);
+  if (classification.crisisTrigger) {
+    addConstitutionalCrisisConsequences(next, text, effects, classification);
+  } else {
+    addInstitutionalConsequences(next, text, effects);
+  }
   next.timeline.push({
     id: `turn-${next.currentMonth}-${next.timeline.length}`,
     month: next.currentMonth,
     dateLabel: dateLabel(next.currentMonth),
-    title: next.currentEvent.title,
+    title: classification.crisisTrigger ? "Constitutional Crisis" : next.currentEvent.title,
     decisionText: text,
     effectsSummary: summarizeEffects(effects),
     approvalBefore: before,
     approvalAfter: next.approval.overall,
     tags: parsedPolicy.tags,
   });
-  next.media = buildMedia(next.currentEvent, parsedPolicy, mediaToneDelta);
+  next.media = classification.crisisTrigger ? buildConstitutionalCrisisMedia(next.currentEvent, classification) : buildMedia(next.currentEvent, parsedPolicy, mediaToneDelta);
   next.lastResolution = effects;
   return {
     game: recomputeGame(next),
     effects,
-    reactions: buildReactions(next, effects),
+    reactions: classification.crisisTrigger ? buildConstitutionalCrisisReactions(classification) : buildReactions(next, effects),
   };
 }
 
 export function advanceTurn(game: GameState): TurnResolution {
   const next: GameState = structuredClone(game);
+  normalizeCourtVacancyState(next);
   monthlyDrift(next);
   next.currentMonth += next.settings.pacing === "weekly" ? 0.25 : 1;
   const monthIndex = Math.floor(next.currentMonth);
@@ -209,9 +236,60 @@ export function advanceTurn(game: GameState): TurnResolution {
   if (monthIndex === 46) next.status = "reelection";
   next.currentDate = dateLabel(monthIndex);
   next.currentEvent = eventById(next.schedule[monthIndex % next.schedule.length]);
+  maybeOpenCourtVacancy(next, monthIndex);
   const courtResolved = resolveCourtMonth(next);
   const cabinetResolved = resolveCabinetEffects(courtResolved);
   return { game: recomputeGame(cabinetResolved), effects: neutralEffects(), reactions: ["A new month begins."] };
+}
+
+export function appointJustice(game: GameState, vacancyId: string, strategy: CourtNominationStrategy): GameState {
+  const next: GameState = structuredClone(game);
+  const wasLegacyVacancyEvent = next.currentEvent.id === "court-vacancy";
+  normalizeCourtVacancyState(next);
+  const vacancy = next.pendingCourtVacancies?.find((item) => item.id === vacancyId) ?? (wasLegacyVacancyEvent ? next.pendingCourtVacancies?.[0] : undefined);
+  if (!vacancy) return next;
+
+  const partyLean = parties[next.president.party].ideology;
+  const ideology =
+    strategy === "consensus"
+      ? partyLean * 0.25
+      : strategy === "historic"
+        ? partyLean * 0.55
+        : partyLean;
+  const nominee: Justice = {
+    id: `justice-appointed-${Math.floor(next.currentMonth)}-${next.supremeCourt.justices.length}`,
+    name: generatedName(hashSeed(`${next.seed}-${vacancy.id}-${strategy}`)),
+    ideology: round1(clamp(ideology, -95, 95)),
+    age: strategy === "historic" ? 49 : strategy === "ideological" ? 52 : 58,
+    health: strategy === "consensus" ? 78 : 72,
+    appointedBy: next.president.party,
+    judicialPhilosophy: strategy === "consensus" ? "institutionalist" : strategy === "historic" ? "pragmatist" : next.president.party === "republican" ? "originalist" : "living_constitutionalist",
+    legitimacyConcern: strategy === "ideological" ? 58 : strategy === "historic" ? 38 : 26,
+    retirementChance: strategy === "consensus" ? 8 : 6,
+    chief: vacancy.chief,
+  };
+
+  next.supremeCourt.justices.push(nominee);
+  next.pendingCourtVacancies = next.pendingCourtVacancies?.filter((item) => item.id !== vacancy.id) ?? [];
+  next.supremeCourt.legitimacy = clamp(next.supremeCourt.legitimacy + (strategy === "consensus" ? 4 : strategy === "historic" ? 1 : -5), 0, 100);
+  next.congress.cooperation = clamp(next.congress.cooperation + (strategy === "consensus" ? 2 : strategy === "ideological" ? -3 : 0), 0, 100);
+  next.timeline.push({
+    id: `court-appointment-${Math.floor(next.currentMonth)}-${next.timeline.length}`,
+    month: next.currentMonth,
+    dateLabel: next.currentDate,
+    title: "Supreme Court Appointment",
+    decisionText: `${next.president.name} nominates ${nominee.name} using a ${strategy.replace("-", " ")} strategy.`,
+    effectsSummary: [`Court legitimacy ${strategy === "consensus" ? "+4" : strategy === "historic" ? "+1" : "-5"}`],
+    approvalBefore: next.approval.overall,
+    approvalAfter: next.approval.overall,
+    tags: ["court", "judiciary", "appointment"],
+  });
+
+  if (next.currentEvent.id === "court-vacancy") {
+    next.currentEvent = eventById(next.schedule[Math.floor(next.currentMonth) % next.schedule.length]);
+  }
+
+  return recomputeGame(next);
 }
 
 export function resolveBillAction(game: GameState, billId: string, action: BillAction): GameState {
@@ -341,6 +419,132 @@ export function parseCustomPolicy(text: string): ParsedPolicy {
   return { tags: tags.length ? tags : ["general"], tone, ideologyScore: round1(ideologyScore), assertiveness: round1(assertiveness), legalityRisk: round1(legalityRisk), fiscalCost: round1(fiscalCost), implementationComplexity: round1(implementationComplexity) };
 }
 
+function classifyPolicy(text: string): PolicyClassification {
+  const lower = text.toLowerCase();
+  const extremeForceTerms = [
+    "shoot on sight",
+    "shoot-on-sight",
+    "shoot to kill",
+    "kill on sight",
+    "execute",
+    "summary execution",
+    "death squads",
+    "open fire on civilians",
+    "lethal force against migrants",
+    "fire at migrants",
+    "shoot border crossers",
+    "shoot illegal immigrants",
+    "machine gun",
+    "mines at the border",
+    "landmines",
+    "electric fence lethal",
+  ];
+  const authoritarianTerms = [
+    "suspend habeas",
+    "mass detention",
+    "indefinite detention",
+    "deport without hearing",
+    "ignore court order",
+    "defy the courts",
+    "military tribunal",
+    "martial law",
+    "round up",
+    "purge",
+    "nationalize media",
+    "arrest opposition",
+  ];
+
+  if (extremeForceTerms.some((term) => lower.includes(term))) {
+    return {
+      actionType: "extrajudicial_lethal_force",
+      issueTags: ["immigration", "border_security", "civil_rights", "use_of_force"],
+      legalityRisk: 100,
+      rightsViolationRisk: 100,
+      violenceLevel: 100,
+      authoritarianLevel: 95,
+      humanitarianRisk: 100,
+      courtRisk: 100,
+      impeachmentRisk: 90,
+      militaryRefusalRisk: 85,
+      internationalBacklash: 95,
+      crisisTrigger: true,
+    };
+  }
+
+  if (authoritarianTerms.some((term) => lower.includes(term))) {
+    return {
+      actionType: "authoritarian_overreach",
+      issueTags: ["civil_rights", "executive_power"],
+      legalityRisk: 85,
+      rightsViolationRisk: 80,
+      violenceLevel: 35,
+      authoritarianLevel: 90,
+      humanitarianRisk: 60,
+      courtRisk: 85,
+      impeachmentRisk: 60,
+      militaryRefusalRisk: 40,
+      internationalBacklash: 65,
+      crisisTrigger: true,
+    };
+  }
+
+  return normalPolicyClassification(parseCustomPolicy(text).tags, parseCustomPolicy(text).legalityRisk);
+}
+
+function normalPolicyClassification(issueTags: string[], legalityRisk: number): PolicyClassification {
+  return {
+    actionType: "normal",
+    issueTags,
+    legalityRisk,
+    rightsViolationRisk: 0,
+    violenceLevel: 0,
+    authoritarianLevel: 0,
+    humanitarianRisk: 0,
+    courtRisk: legalityRisk,
+    impeachmentRisk: 0,
+    militaryRefusalRisk: 0,
+    internationalBacklash: 0,
+    crisisTrigger: false,
+  };
+}
+
+function constitutionalCrisisEffects(game: GameState, parsedPolicy: ParsedPolicy, classification: PolicyClassification): TurnResolutionSummary {
+  const restrictionistBoost = classification.actionType === "extrajudicial_lethal_force" ? 3 : 0;
+  return {
+    parsedPolicy: {
+      ...parsedPolicy,
+      tags: [...new Set([...parsedPolicy.tags, ...classification.issueTags])],
+      tone: "combative",
+      legalityRisk: classification.legalityRisk,
+      assertiveness: Math.max(parsedPolicy.assertiveness, classification.authoritarianLevel),
+      implementationComplexity: 100,
+    },
+    approvalDelta: classification.actionType === "extrajudicial_lethal_force" ? -25 : -16,
+    congressDelta: classification.actionType === "extrajudicial_lethal_force" ? -8 : -6,
+    courtRiskDelta: 10,
+    cabinetDelta: classification.actionType === "extrajudicial_lethal_force" ? -30 : -18,
+    economyDelta: {
+      ...game.economy,
+      consumerConfidence: clamp(game.economy.consumerConfidence - classification.internationalBacklash / 12, 0, 100),
+      stockMarket: clamp(game.economy.stockMarket - classification.internationalBacklash / 16, 0, 100),
+    },
+    stakeholderDeltas: {
+      "civil-rights": -50,
+      defense: -40,
+      states: -25,
+      media: -35,
+      business: -15,
+      faith: restrictionistBoost,
+    },
+    personaDeltas: Object.fromEntries(game.personas.map((persona) => {
+      const hardlineBoost = persona.topIssues.includes("border") || persona.topIssues.includes("security") ? restrictionistBoost : 0;
+      const backlash = persona.ideology < -20 ? -18 : persona.ideology < 20 ? -12 : -5;
+      return [persona.id, clamp(backlash + hardlineBoost, -25, 5)];
+    })),
+    mediaToneDelta: -12,
+  };
+}
+
 function parseOption(option: ResponseOption): ParsedPolicy {
   const ideologyScore = option.style === "bold" ? 35 : option.style === "institutional" ? 0 : -5;
   return {
@@ -394,6 +598,51 @@ function addInstitutionalConsequences(game: GameState, text: string, effects: Tu
   if (effects.mediaToneDelta < -8 && effects.parsedPolicy.legalityRisk > 35) {
     game.scandals.push({ id: `scandal-${game.currentMonth}`, type: "abuse of power allegation", stage: "inquiry", truthLevel: effects.parsedPolicy.legalityRisk / 2, evidenceStrength: 35, mediaIntensity: 62, oppositionAggression: 70, partyDefense: game.approval.party, publicFatigue: 8, legalExposure: effects.parsedPolicy.legalityRisk });
   }
+}
+
+function addConstitutionalCrisisConsequences(game: GameState, text: string, effects: TurnResolutionSummary, classification: PolicyClassification) {
+  game.pendingCases.push({
+    id: `case-crisis-${game.currentMonth}-${game.pendingCases.length}`,
+    title: classification.actionType === "extrajudicial_lethal_force" ? "Civil Rights Groups v. United States" : `Challenge to ${text.slice(0, 34)}${text.length > 34 ? "..." : ""}`,
+    challengedPolicyId: `turn-${game.currentMonth}`,
+    constitutionalIssue: classification.actionType === "extrajudicial_lethal_force" ? "Due process, excessive force, and statutory authority" : "Separation of powers and due process",
+    lowerCourtStatus: "Emergency injunction filed",
+    plaintiffType: "civil_rights_group",
+    governmentWinChance: classification.actionType === "extrajudicial_lethal_force" ? 1 : 8,
+    decisionMonth: Math.floor(game.currentMonth),
+    stakes: [{ target: "approval", amount: effects.approvalDelta }],
+    status: "pending",
+  });
+
+  game.activeCrises.push({
+    id: `constitutional-crisis-${game.currentMonth}`,
+    type: "constitutional crisis",
+    severity: classification.actionType === "extrajudicial_lethal_force" ? 96 : 82,
+    duration: 4,
+    publicFear: classification.humanitarianRisk,
+    institutionalConfidence: Math.max(5, game.approval.trust - classification.authoritarianLevel / 2),
+    federalResponseQuality: 8,
+    stateCooperation: Math.max(5, game.congress.cooperation - classification.authoritarianLevel / 3),
+    mediaPressure: 95,
+    deathTollOrDamage: classification.violenceLevel / 2,
+    economicImpact: classification.internationalBacklash / 2,
+  });
+
+  game.scandals.push({
+    id: `unlawful-order-${game.currentMonth}-${game.scandals.length}`,
+    type: "unlawful order allegation",
+    stage: "hearings",
+    truthLevel: classification.legalityRisk,
+    evidenceStrength: 90,
+    mediaIntensity: 92,
+    oppositionAggression: classification.impeachmentRisk,
+    partyDefense: Math.max(5, game.approval.party - 20),
+    publicFatigue: 4,
+    legalExposure: classification.courtRisk,
+  });
+
+  game.supremeCourt.legitimacy = clamp(game.supremeCourt.legitimacy - classification.courtRisk / 8, 0, 100);
+  game.congress.cooperation = clamp(game.congress.cooperation - classification.impeachmentRisk / 12, 0, 100);
 }
 
 function makeBill(game: GameState, issue: string, effects: TurnResolutionSummary): Bill {
@@ -492,8 +741,46 @@ function buildCourt(courtLean: number, seedValue: number) {
   return { justices, legitimacy: 58 };
 }
 
+function normalizeCourtVacancyState(game: GameState) {
+  game.pendingCourtVacancies = game.pendingCourtVacancies ?? [];
+  game.schedule = game.schedule.filter((id) => id !== "court-vacancy");
+  if (game.currentEvent.id === "court-vacancy") {
+    openCourtVacancy(game, Math.floor(game.currentMonth), "retirement");
+    game.currentEvent = eventById(game.schedule[Math.floor(game.currentMonth) % game.schedule.length]);
+  }
+}
+
+function maybeOpenCourtVacancy(game: GameState, monthIndex: number) {
+  normalizeCourtVacancyState(game);
+  if ((game.pendingCourtVacancies?.length ?? 0) || game.supremeCourt.justices.length <= 8) return;
+  const candidate = [...game.supremeCourt.justices].sort((a, b) => b.retirementChance - a.retirementChance)[0];
+  const roll = hashSeed(`${game.seed}-court-vacancy-${monthIndex}`) % 100;
+  if (roll < candidate.retirementChance / 4) {
+    openCourtVacancy(game, monthIndex, "retirement", candidate.id);
+  }
+}
+
+function openCourtVacancy(game: GameState, monthIndex: number, reason: SupremeCourtVacancy["reason"], justiceId?: string) {
+  game.pendingCourtVacancies = game.pendingCourtVacancies ?? [];
+  if (game.pendingCourtVacancies.length || game.supremeCourt.justices.length <= 8) return;
+  const selected =
+    game.supremeCourt.justices.find((justice) => justice.id === justiceId) ??
+    [...game.supremeCourt.justices].sort((a, b) => b.retirementChance - a.retirementChance)[0];
+
+  game.supremeCourt.justices = game.supremeCourt.justices.filter((justice) => justice.id !== selected.id);
+  game.pendingCourtVacancies.push({
+    id: `vacancy-${monthIndex}-${selected.id}`,
+    previousJusticeName: selected.name,
+    previousIdeology: selected.ideology,
+    openedMonth: monthIndex,
+    reason,
+    chief: Boolean(selected.chief),
+  });
+}
+
 function buildSchedule(scenario: Scenario, seedValue: number): string[] {
-  const ids = scenario.eventIds.length ? [...scenario.eventIds] : events.map((item) => item.id);
+  const ids = (scenario.eventIds.length ? [...scenario.eventIds] : events.map((item) => item.id)).filter((id) => id !== "court-vacancy");
+  if (!ids.length) ids.push(...events.map((item) => item.id).filter((id) => id !== "court-vacancy"));
   for (let index = ids.length - 1; index > 0; index -= 1) {
     const swap = (seedValue + index * 17) % ids.length;
     [ids[index], ids[swap]] = [ids[swap], ids[index]];
@@ -524,13 +811,60 @@ function buildMedia(event: ScenarioEvent, parsed: ParsedPolicy, toneDelta: numbe
   };
 }
 
+function buildConstitutionalCrisisMedia(event: ScenarioEvent, classification: PolicyClassification) {
+  const title = classification.actionType === "extrajudicial_lethal_force" ? "lethal-force order" : "executive order";
+  return {
+    tone: -12,
+    narrative: `The ${title} triggers an immediate constitutional crisis instead of a normal policy fight.`,
+    headlines: {
+      left: `Civil-rights groups seek emergency injunction after ${event.title}`,
+      center: `Courts and agencies resist unlawful ${title}`,
+      right: `President's party splits as crisis escalates`,
+      social: `Legal experts, allies, and protesters condemn the ${title}.`,
+    },
+  };
+}
+
 function buildReactions(game: GameState, effects: TurnResolutionSummary) {
   return game.personas.slice(0, 4).map((persona) => {
     const delta = effects.personaDeltas[persona.id] ?? 0;
-    if (delta >= 2) return `${persona.name} says the response shows progress on ${effects.parsedPolicy.tags[0] ?? "the issue"}.`;
-    if (delta <= -2) return `${persona.name} says the administration is missing what matters most.`;
-    return `${persona.name} is waiting to see whether the policy works.`;
+    const issue = persona.topIssues.find((priority) => effects.parsedPolicy.tags.includes(priority)) ?? effects.parsedPolicy.tags[0] ?? "the issue";
+
+    if (delta >= 2) {
+      if (persona.reactionStyle === "impatient") return `${persona.name} sees progress on ${issue}, but wants faster follow-through.`;
+      if (persona.reactionStyle === "coalitional") return `${persona.name} thinks the response can hold a broader coalition on ${issue}.`;
+      if (persona.reactionStyle === "practical") return `${persona.name} wants proof the ${issue} plan will work at home.`;
+      if (persona.reactionStyle === "material") return `${persona.name} credits the response for addressing pocketbook stakes around ${issue}.`;
+      if (persona.reactionStyle === "cost-focused") return `${persona.name} welcomes the plan if it keeps costs and compliance predictable.`;
+      if (persona.reactionStyle === "ideological") return `${persona.name} says the move finally draws a clearer line on ${issue}.`;
+      if (persona.reactionStyle === "strength-focused") return `${persona.name} says the response projects resolve on ${issue}.`;
+      return `${persona.name} cautiously approves, but wants steady implementation.`;
+    }
+    if (delta <= -2) {
+      if (persona.reactionStyle === "impatient") return `${persona.name} says the response is too timid on ${issue}.`;
+      if (persona.reactionStyle === "coalitional") return `${persona.name} worries the coalition is fraying over ${issue}.`;
+      if (persona.reactionStyle === "practical") return `${persona.name} doubts the plan solves the daily pressure from ${issue}.`;
+      if (persona.reactionStyle === "material") return `${persona.name} says workers still need concrete help on ${issue}.`;
+      if (persona.reactionStyle === "cost-focused") return `${persona.name} warns the response could add costs without certainty.`;
+      if (persona.reactionStyle === "ideological") return `${persona.name} says the administration is conceding too much on ${issue}.`;
+      if (persona.reactionStyle === "strength-focused") return `${persona.name} says the response lacks enough force on ${issue}.`;
+      return `${persona.name} is not convinced the response meets the moment.`;
+    }
+    if (persona.reactionStyle === "practical") return `${persona.name} is waiting for measurable results before judging the response.`;
+    if (persona.reactionStyle === "risk-averse") return `${persona.name} is watching for stability and unintended consequences.`;
+    return `${persona.name} is reserving judgment while the policy rolls out.`;
   });
+}
+
+function buildConstitutionalCrisisReactions(classification: PolicyClassification) {
+  const lethal = classification.actionType === "extrajudicial_lethal_force";
+  return [
+    `Courts: Emergency injunction filed within hours. Government win chance is ${lethal ? "near zero" : "very low"}.`,
+    `Congress: Opposition leadership announces emergency hearings and impeachment pressure rises sharply.`,
+    `Cabinet: Legal and security officials object that the order is unlawful, with high refusal and resignation risk.`,
+    `Public: A hardline faction applauds the show of force, but independents, moderates, and civil-liberties voters recoil.`,
+    `International: Allies and human-rights organizations condemn the policy as a severe rule-of-law breach.`,
+  ];
 }
 
 function summarizeEffects(effects: TurnResolutionSummary): string[] {

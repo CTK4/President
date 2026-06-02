@@ -5,10 +5,11 @@ import { View } from "react-native";
 
 import { EmptyState } from "@/components/empty-state";
 import { ApprovalPanel, BillList, CabinetList, CaseList, CongressPanel, CourtPanel, CurrentEventPanel, EconomyPanel } from "@/components/game-panels";
-import { AppText, Button, Card, Field, Meter, Row, Screen, SegmentedSubnav, Stat, colors } from "@/components/ui";
+import { AppText, Button, Card, Field, Meter, OptionGrid, Row, Screen, SegmentedSubnav, Stat, colors } from "@/components/ui";
 import { primaryTabs, type PrimaryTabId, type SectionId } from "@/navigation/tabs";
 import { computeLegacy } from "@/sim/engine";
-import { advanceTurn, resetGame, resolveBillAction, resolveElection, submitResponse, useGameSnapshot } from "@/state/game-store";
+import { advanceTurn, appointJustice, resetGame, resolveBillAction, resolveElection, submitResponse, useGameSnapshot } from "@/state/game-store";
+import type { CourtNominationStrategy, SupremeCourtVacancy } from "@/sim/types";
 
 type SectionScreenProps<T extends SectionId> = {
   tabId: PrimaryTabId;
@@ -16,6 +17,24 @@ type SectionScreenProps<T extends SectionId> = {
   onSelect: (id: T) => void;
   children: React.ReactNode;
 };
+
+const nominationOptions: Array<{ id: CourtNominationStrategy; title: string; description: string }> = [
+  {
+    id: "consensus",
+    title: "Consensus nominee",
+    description: "Effect: smaller ideological shift, improves Court legitimacy, and preserves congressional cooperation.",
+  },
+  {
+    id: "ideological",
+    title: "Ideological nominee",
+    description: "Effect: larger party-aligned shift, energizes the base, but lowers legitimacy and cooperation.",
+  },
+  {
+    id: "historic",
+    title: "Historic first",
+    description: "Effect: meaningful ideological shift with a public-trust upside and moderate institutional risk.",
+  },
+];
 
 export function SectionScreen<T extends SectionId>({ tabId, selected, onSelect, children }: SectionScreenProps<T>) {
   const tab = primaryTabs.find((item) => item.id === tabId);
@@ -32,14 +51,19 @@ export function DashboardOverviewSection() {
   const { game } = useGameSnapshot();
   if (!game) return <EmptyState />;
 
+  const status = game.status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
   return (
     <>
       <Card tone="blue">
         <AppText variant="title">{game.president.name}</AppText>
         <AppText color={colors.muted}>{game.president.party.toUpperCase()} - {game.president.background} - Month {Math.floor(game.currentMonth) + 1} / 48</AppText>
         <Row>
-          <Stat label="Status" value={game.status} />
-          <Stat label="VP" value={game.vicePresident.name.split(" ")[0]} />
+          <Stat label="Status" value={status} />
+          <Stat label="VP" value={game.vicePresident.name} />
         </Row>
       </Card>
       {(game.status === "midterm" || game.status === "reelection") ? (
@@ -216,21 +240,44 @@ export function EconomySection() {
   const { game } = useGameSnapshot();
   if (!game) return <EmptyState />;
 
+  const indicators = [
+    { label: "Interest rates", value: `${game.economy.interestRates.toFixed(1)}%` },
+    { label: "Deficit", value: `${game.economy.deficit.toFixed(1)}%` },
+    { label: "Consumer confidence", value: Math.round(game.economy.consumerConfidence) },
+    { label: "Stock market", value: Math.round(game.economy.stockMarket) },
+    { label: "Wage growth", value: `${game.economy.wageGrowth.toFixed(1)}%` },
+    { label: "Housing affordability", value: Math.round(game.economy.housingAffordability) },
+    { label: "Gas price", value: `$${game.economy.gasPrices.toFixed(2)}` },
+    { label: "Poverty", value: `${game.economy.poverty.toFixed(1)}%` },
+  ];
+
   return (
     <>
       <EconomyPanel game={game} />
       <Card>
         <AppText variant="subtitle">Economic Indicators</AppText>
-        <Row>
-          <Stat label="Rates" value={`${game.economy.interestRates.toFixed(1)}%`} />
-          <Stat label="Deficit" value={`${game.economy.deficit.toFixed(1)}%`} />
-          <Stat label="Confidence" value={Math.round(game.economy.consumerConfidence)} />
-          <Stat label="Market" value={Math.round(game.economy.stockMarket)} />
-          <Stat label="Wages" value={`${game.economy.wageGrowth.toFixed(1)}%`} />
-          <Stat label="Housing" value={Math.round(game.economy.housingAffordability)} />
-          <Stat label="Gas" value={`$${game.economy.gasPrices.toFixed(2)}`} />
-          <Stat label="Poverty" value={`${game.economy.poverty.toFixed(1)}%`} />
-        </Row>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {indicators.map((indicator) => (
+            <View
+              key={indicator.label}
+              style={{
+                flexBasis: "47%",
+                flexGrow: 1,
+                minWidth: 150,
+                borderColor: colors.line,
+                borderWidth: 1,
+                borderRadius: 8,
+                borderCurve: "continuous",
+                backgroundColor: "#faf7f1",
+                padding: 10,
+                gap: 2,
+              }}
+            >
+              <AppText variant="label">{indicator.label}</AppText>
+              <AppText variant="subtitle">{indicator.value}</AppText>
+            </View>
+          ))}
+        </View>
       </Card>
       <Card>
         <AppText variant="subtitle">Lagged Effects</AppText>
@@ -323,6 +370,7 @@ export function EventsSection() {
   const { game, lastResolution } = useGameSnapshot();
   const [custom, setCustom] = React.useState("");
   if (!game) return <EmptyState />;
+  const courtVacancyMoved = game.currentEvent.id === "court-vacancy";
   const hasActed = game.timeline[game.timeline.length - 1]?.month === game.currentMonth;
 
   async function choose(optionId: string) {
@@ -347,7 +395,12 @@ export function EventsSection() {
           <Stat label="Urgency" value={game.currentEvent.urgency} color={colors.gold} />
         </Row>
       </Card>
-      {!hasActed ? (
+      {courtVacancyMoved ? (
+        <Card tone="blue">
+          <AppText variant="subtitle">Vacancy moved to People</AppText>
+          <AppText color={colors.muted}>Supreme Court vacancies are no longer monthly response events. Open the People tab to nominate and fill the seat.</AppText>
+        </Card>
+      ) : !hasActed ? (
         <>
           <View style={{ gap: 10 }}>
             {game.currentEvent.responseOptions.map((option) => (
@@ -390,6 +443,19 @@ export function EventsSection() {
 export function PeopleSection() {
   const { game } = useGameSnapshot();
   if (!game) return <EmptyState />;
+  const pendingCourtVacancies: SupremeCourtVacancy[] =
+    game.pendingCourtVacancies?.length
+      ? game.pendingCourtVacancies
+      : game.currentEvent.id === "court-vacancy"
+        ? [{
+            id: `legacy-vacancy-${Math.floor(game.currentMonth)}`,
+            previousJusticeName: "Retiring justice",
+            previousIdeology: 0,
+            openedMonth: Math.floor(game.currentMonth),
+            reason: "retirement",
+            chief: false,
+          }]
+        : [];
 
   return (
     <>
@@ -402,6 +468,27 @@ export function PeopleSection() {
         </Row>
         <Meter label="Loyalty" value={game.vicePresident.loyalty} color={colors.green} />
         <Meter label="Ambition" value={game.vicePresident.ambition} color={colors.gold} />
+      </Card>
+      <Card tone={pendingCourtVacancies.length ? "red" : "green"}>
+        <AppText variant="subtitle">Judicial Vacancies</AppText>
+        {pendingCourtVacancies.length ? (
+          <View style={{ gap: 10 }}>
+            {pendingCourtVacancies.map((vacancy) => (
+              <View key={vacancy.id} style={{ gap: 8 }}>
+                <AppText color={colors.muted}>
+                  {vacancy.chief ? "Chief justice seat" : "Associate justice seat"} opened by {vacancy.reason} of {vacancy.previousJusticeName}.
+                </AppText>
+                <OptionGrid
+                  selected={undefined}
+                  onSelect={(strategy) => void appointJustice(vacancy.id, strategy)}
+                  options={nominationOptions}
+                />
+              </View>
+            ))}
+          </View>
+        ) : (
+          <AppText color={colors.muted}>No current Supreme Court vacancies. New openings will appear here instead of the monthly event flow.</AppText>
+        )}
       </Card>
       <AppText variant="subtitle">Cabinet</AppText>
       <CabinetList cabinet={game.cabinet} />

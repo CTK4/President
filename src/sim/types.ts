@@ -5,6 +5,7 @@ export type PersonaMode = "off" | "realistic" | "chaotic" | "social";
 export type EventGenerationMode = "classic" | "hybrid" | "dynamic";
 export type Pacing = "monthly" | "weekly";
 export type BillAction = "support" | "oppose" | "negotiate" | "pressure" | "sign" | "veto" | "let_die";
+export type CourtNominationStrategy = "consensus" | "ideological" | "historic";
 
 export type Effect = {
   target: string;
@@ -101,6 +102,15 @@ export type Justice = {
   legitimacyConcern: number;
   retirementChance: number;
   chief?: boolean;
+};
+
+export type SupremeCourtVacancy = {
+  id: string;
+  previousJusticeName: string;
+  previousIdeology: number;
+  openedMonth: number;
+  reason: "retirement" | "death" | "elevation";
+  chief: boolean;
 };
 
 export type SupremeCourt = {
@@ -380,6 +390,7 @@ export type GameState = {
   schedule: string[];
   pendingBills: Bill[];
   pendingCases: CourtCase[];
+  pendingCourtVacancies?: SupremeCourtVacancy[];
   activeCrises: Crisis[];
   scandals: Scandal[];
   timeline: TimelineEntry[];
